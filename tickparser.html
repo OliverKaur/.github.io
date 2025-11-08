@@ -85,8 +85,7 @@
     // ----------- BANK VALUE CALCULATOR -----------
     function calculateBankValue(bank, prices, idMap) {
       return bank.reduce((sum, item) => {
-        const name = idMap[item.id];
-        const price = prices[name] || 0;
+        const price = prices[item.id] || 0;
         return sum + price * item.qty;
       }, 0);
     }
@@ -95,23 +94,24 @@
     function readSave() {
       const file = document.getElementById("file").files[0];
       if (!file) return alert("Choose a file first!");
-
+    
       const reader = new FileReader();
       reader.onload = async function(e) {
         const bytes = new Uint8Array(e.target.result);
         const ticks = (bytes[24] << 24) | (bytes[25] << 16) | (bytes[26] << 8) | bytes[27];
         const totalSeconds = ticks * 0.6;
         const t = formatTime(totalSeconds);
-
-        // Load prices + ID map
-        const [prices, idMap] = await Promise.all([
-          fetch("prices.json").then(r => r.json()),
-          fetch("idmap.json").then(r => r.json()).catch(() => ({})) // optional
-        ]);
-
+    
+        // ✅ Load prices.json only once (no idMap needed)
+        const prices = await fetch("prices.json").then(r => r.json());
+    
+        // ✅ Parse bank from .sav
         const bank = parseBankFromSave(bytes);
-        const bankValue = calculateBankValue(bank, prices, idMap);
-
+    
+        // ✅ Calculate total using numeric ID lookups
+        const bankValue = calculateBankValue(bank, prices);
+    
+        // ✅ Build output text
         const out =
           `Ticks: ${ticks}\n\n` +
           `Minutes: ${Math.floor(totalSeconds / 60)}m ${Math.floor(totalSeconds % 60)}s\n` +
@@ -119,12 +119,13 @@
           `Days: ${t.days}d ${t.hours}h ${t.minutes}m ${t.seconds}s\n\n` +
           `💰 Bank Value: ${bankValue.toLocaleString()} gp\n` +
           `Items Parsed: ${bank.length}`;
-
+    
         document.getElementById("out").innerText = out;
       };
-
+    
       reader.readAsArrayBuffer(file);
     }
+
   </script>
 
   <h3>
@@ -136,3 +137,4 @@
 
 </body>
 </html>
+
