@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Lost City 2004 RuneScape Time Played & Bank Value</title>
+  <title>Lost City 2004 RuneScape — Time Played & Bank Value</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="style.css">
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -13,9 +12,7 @@
       max-width: 600px;
       margin: auto;
     }
-    h2 {
-      text-align: center;
-    }
+    h2 { text-align: center; }
     button {
       margin-left: 10px;
       padding: 6px 12px;
@@ -30,25 +27,18 @@
       font-size: 14px;
       border-radius: 6px;
     }
-    h3 {
-      margin-top: 30px;
-      text-align: center;
-      line-height: 1.5em;
-    }
-    h3 a {
-      display: block;
-      margin-top: 5px;
-    }
+    h3 { margin-top: 30px; text-align: center; line-height: 1.5em; }
+    h3 a { display: block; margin-top: 5px; }
   </style>
 </head>
 <body>
   <h2>Upload a .sav file to Check Time Played & Bank Value</h2>
   <input type="file" id="file" accept=".sav">
-  <button onclick="readSave()">Check Ticks</button>
+  <button onclick="readSave()">Check Save</button>
   <pre id="out"></pre>
 
   <script>
-    // ----------- TIME PARSER -----------
+    // ---- TIME PARSER ----
     function formatTime(seconds) {
       const days = Math.floor(seconds / 86400);
       seconds %= 86400;
@@ -59,82 +49,103 @@
       return { days, hours, minutes, seconds };
     }
 
-    // ----------- BANK PARSER -----------
-    function parseBankFromSave(bytes) {
-      // Search for the 00 5F 00 F0 marker
-      for (let i = 0; i < bytes.length - 4; i++) {
-        if (bytes[i] === 0x00 && bytes[i+1] === 0x5F && bytes[i+2] === 0x00 && bytes[i+3] === 0xF0) {
-          let bank = [];
-          let ptr = i + 4;
+    // ---- UTILS ----
+    function readU16BE(d, p) {
+      return (d[p] << 8) | d[p + 1];
+    }
+    function readU32BE(d, p) {
+      return ((d[p] << 24) | (d[p + 1] << 16) | (d[p + 2] << 8) | d[p + 3]) >>> 0;
+    }
+    function readCountFlexible(d, p) {
+      const b0 = d[p];
+      if (b0 === 0xFF) return [readU32BE(d, p + 1), 5];
+      if (b0 === 0x00) return [readU32BE(d, p), 4];
+      return [b0, 1];
+    }
 
-          // Read until we hit invalid/empty slot or end
-          while (ptr + 6 < bytes.length) {
-            const id = (bytes[ptr] << 8) | bytes[ptr + 1];
-            const qty = (bytes[ptr + 2] << 24) | (bytes[ptr + 3] << 16) | (bytes[ptr + 4] << 8) | bytes[ptr + 5];
-            ptr += 6;
+    // ---- BANK PARSER ----
+    function parseBank(data) {
+      const START = [0x00, 0x5F, 0x00, 0xF0];
+      const END = [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
 
-            if (id === 0 || qty === 0) break; // end of bank
-            bank.push({ id, qty });
-          }
-          return bank;
+      // find start
+      let sm = -1;
+      for (let i = 0; i < data.length - START.length; i++) {
+        if (data[i]===START[0]&&data[i+1]===START[1]&&data[i+2]===START[2]&&data[i+3]===START[3]) {
+          sm = i + START.length;
+          break;
         }
       }
-      return [];
+      if (sm === -1) return [];
+
+      // find end
+      let em = data.length;
+      for (let i = sm + 8; i < data.length - END.length; i++) {
+        let match = true;
+        for (let j = 0; j < END.length; j++) {
+          if (data[i + j] !== END[j]) { match = false; break; }
+        }
+        if (match) { em = i; break; }
+      }
+
+      let o = sm, slot = 1;
+      const items = [];
+      while (o + 3 <= em) {
+        const idPlus1 = readU16BE(data, o);
+        o += 2;
+        const item_id = idPlus1 - 1;
+        const [qty, size] = readCountFlexible(data, o);
+        if (size === 0) break;
+        o += size;
+        if (item_id > 0 && item_id <= 10000 && qty > 0)
+          items.push({ slot, item_id, qty });
+        slot++;
+      }
+      return items;
     }
 
-    // ----------- BANK VALUE CALCULATOR -----------
-    function calculateBankValue(bank, prices, idMap) {
-      return bank.reduce((sum, item) => {
-        const price = prices[item.id] || 0;
-        return sum + price * item.qty;
-      }, 0);
-    }
-
-    // ----------- MAIN FUNCTION -----------
-    function readSave() {
+    // ---- MAIN FUNCTION ----
+    async function readSave() {
       const file = document.getElementById("file").files[0];
       if (!file) return alert("Choose a file first!");
-    
+
       const reader = new FileReader();
-      reader.onload = async function(e) {
+      reader.onload = async e => {
         const bytes = new Uint8Array(e.target.result);
+
+        // Parse ticks
         const ticks = (bytes[24] << 24) | (bytes[25] << 16) | (bytes[26] << 8) | bytes[27];
         const totalSeconds = ticks * 0.6;
         const t = formatTime(totalSeconds);
-    
-        // ✅ Load prices.json only once (no idMap needed)
-        const prices = await fetch("prices.json").then(r => r.json());
-    
-        // ✅ Parse bank from .sav
-        const bank = parseBankFromSave(bytes);
-    
-        // ✅ Calculate total using numeric ID lookups
-        const bankValue = calculateBankValue(bank, prices);
-    
-        // ✅ Build output text
+
+        // Parse bank
+        const bank = parseBank(bytes);
+
+        // Load price data (optional)
+        let prices = {};
+        try {
+          prices = await fetch("prices.json").then(r => r.json());
+        } catch {}
+
+        const totalValue = bank.reduce((sum, it) => sum + (prices[it.item_id] || 0) * it.qty, 0);
+
+        // Output
         const out =
           `Ticks: ${ticks}\n\n` +
-          `Minutes: ${Math.floor(totalSeconds / 60)}m ${Math.floor(totalSeconds % 60)}s\n` +
-          `Hours: ${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m ${Math.floor(totalSeconds % 60)}s\n` +
-          `Days: ${t.days}d ${t.hours}h ${t.minutes}m ${t.seconds}s\n\n` +
-          `💰 Bank Value: ${bankValue.toLocaleString()} gp\n` +
-          `Items Parsed: ${bank.length}`;
-    
+          `Time: ${t.days}d ${t.hours}h ${t.minutes}m ${t.seconds}s\n\n` +
+          `💰 Bank Value: ${totalValue.toLocaleString()} gp\n` +
+          `Items Parsed: ${bank.length}\n\n` +
+          bank.slice(0, 40).map(it => `Slot ${it.slot}: ID ${it.item_id} × ${it.qty}`).join("\n");
+
         document.getElementById("out").innerText = out;
       };
-    
       reader.readAsArrayBuffer(file);
     }
-
   </script>
 
   <h3>
     You can access your Lost City save file here: <br>
-    <a href="https://2004.lostcity.rs/account" target="_blank">
-      2004.lostcity.rs/account
-    </a>
+    <a href="https://2004.lostcity.rs/account" target="_blank">2004.lostcity.rs/account</a>
   </h3>
-
 </body>
 </html>
-
