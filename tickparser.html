@@ -113,9 +113,9 @@
       // output
       const out=
         `Ticks: ${ticks}\n\n` +
-        `Days/Hours/Minutes/Seconds: ${t.days}d ${t.hours}h ${t.minutes}m ${t.seconds}s\n` +
-        `Hours/Minutes/Seconds: ${totalHours}h ${remMin}m ${remSec}s\n` +
-        `Minutes/Seconds: ${totalMinutes}m ${remSec}s\n` +
+        `Days: ${t.days}d ${t.hours}h ${t.minutes}m ${t.seconds}s\n` +
+        `Hours: ${totalHours}h ${remMin}m ${remSec}s\n` +
+        `Minutes: ${totalMinutes}m ${remSec}s\n` +
         `Seconds: ${onlySeconds}s\n\n` +
         `💰 Bank Value: ${totalValue.toLocaleString()} gp\n` +
         `Items Parsed: ${bank.length}`;
@@ -128,4 +128,5 @@
 
 </body>
 </html>
+
 
